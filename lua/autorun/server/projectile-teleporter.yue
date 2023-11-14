@@ -1,0 +1,133 @@
+:TraceLine, :TraceHull, :IsInWorld = util
+:FindInSphere = ents
+:abs = math
+
+AddonName = "Projectile Teleporter"
+AllowedClasses = {
+    npc_grenade_bugbait: true
+    prop_combine_ball: true
+    npc_grenade_frag: true
+    rpg_missile: true
+    grenade_ar2: true
+}
+
+do
+
+    fileName = string.gsub( string.lower( AddonName ), "[%p%s%c]+", "_" ) .. ".json"
+    if file.Exists( fileName, "DATA" )
+        json = file.Read( fileName, "DATA" )
+        if isstring( json )
+            data = util.JSONToTable( json )
+            if istable( data )
+                table.Merge( AllowedClasses, data )
+    else
+        file.Write( fileName, util.TableToJSON( AllowedClasses, true ) )
+
+do
+
+    Flags = bit.bor( FCVAR_ARCHIVE, FCVAR_NOTIFY )
+    for className, default in pairs( AllowedClasses )
+        ConVar = CreateConVar( "mp_allow_teleport_to_" .. className, default and "1" or "0", Flags, "Allows players teleport to '" .. className .. "'.", 0, 1 )
+        AllowedClasses[ className ] = ConVar\GetBool!
+
+        cvars.AddChangeCallback( ConVar\GetName!, ( _, __, value ) ->
+            AllowedClasses[ className ] = tobool( value )
+        AddonName )
+
+TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
+    unless IsInWorld( origin )
+        return false
+
+    if TraceHull( {
+        start: origin
+        endpos: origin
+        :filter
+        :mins
+        :maxs
+    } ).Hit
+        return false
+
+    velocity = @GetVelocity!
+    count = 1
+
+    for entity in *FindInSphere( origin, radius + 16 )
+        if entity == @
+            continue
+
+        className = entity\GetClass!
+        unless className == "prop_physics" or ( className == "player" and entity\Alive! ) or entity\IsNPC!
+            continue
+
+        if entity\GetMaxHealth! > 100
+            continue
+
+        health = entity\Health!
+        if health > 100
+            continue
+
+        position = entity\GetPos!
+        unless IsInWorld( position )
+            continue
+
+        gibVelocity = entity\GetVelocity!
+        count += 1
+
+        @SetVelocity( gibVelocity )
+        @SetPos( position )
+
+        if entity\PrecacheGibs! > 0
+            gibVelocity\Add( velocity )
+            gibVelocity\Add( force )
+
+            entity\GibBreakClient( gibVelocity )
+            if className == "player"
+                entity\KillSilent!
+                return
+        entity\TakeDamage( health, attacker )
+
+    @SetVelocity( force / 2 )
+    @SetPos( origin )
+
+    return true
+
+AngleMeta = FindMetaTable( "Angle" )
+Directions = {
+    Vector( 0, 0, 1 )
+    Vector( 0, 0, -1 )
+    Vector( 1, 0, 0 )
+    Vector( 0, 1, 0 )
+    Vector( -1, 0, 0 )
+    Vector( 0, -1, 0 )
+}
+
+hook.Add "EntityRemoved", AddonName, ( fullUpdate ) =>
+    unless AllowedClasses[ @GetClass! ] and not fullUpdate
+        return
+
+    owner = @GetOwner!
+    unless owner\IsValid! and owner\IsPlayer!
+        return
+
+    unless owner\Alive!
+        owner = owner\GetRagdollEntity!
+        unless owner\IsValid!
+            return
+
+    start = @LocalToWorld( @OBBCenter! )
+    velocity = @GetVelocity!
+
+    mins, maxs = owner\GetCollisionBounds!
+    length = ( abs( maxs[ 1 ] ) + abs( mins[ 1 ] ) ) / 2 + ( abs( maxs[ 2 ] ) + abs( mins[ 2 ] ) ) / 2
+    filter = { @, owner }
+
+    Trace = { :start, endpos: start - velocity\GetNormalized! * length, :filter }
+    TraceResult = TraceLine( Trace )
+    if not TraceResult.Hit and TryTeleportPlayer( owner, TraceResult.HitPos, filter, mins, maxs, @, length, velocity )
+        return
+
+    angles = @GetAngles!
+    for direction in *Directions
+        Trace.endpos = start + direction * maxs
+        TraceResult = TraceLine( Trace )
+        if not TraceResult.Hit and TryTeleportPlayer( owner, TraceResult.HitPos, filter, mins, maxs, @, length, velocity )
+            break
