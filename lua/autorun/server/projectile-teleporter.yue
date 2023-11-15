@@ -83,7 +83,7 @@ TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
             if className == "player"
                 entity\KillSilent!
                 return
-        entity\TakeDamage( health, attacker )
+        entity\TakeDamage( health, attacker, inflictor )
 
     @SetVelocity( force / 2 )
     @SetPos( origin )
