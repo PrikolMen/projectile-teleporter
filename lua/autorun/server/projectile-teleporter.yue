@@ -23,6 +23,7 @@ do
     else
         file.Write( fileName, util.TableToJSON( AllowedClasses, true ) )
 
+Protection = nil
 do
 
     Flags = bit.bor( FCVAR_ARCHIVE, FCVAR_NOTIFY )
@@ -33,6 +34,7 @@ do
         cvars.AddChangeCallback( ConVar\GetName!, ( _, __, value ) ->
             AllowedClasses[ className ] = tobool( value )
         AddonName )
+    Protection = CreateConVar( "mp_teleport_protection", "1", Flags, "Protect the player from suicide by teleportation.", 0, 1 )
 
 TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
     unless IsInWorld( origin )
@@ -48,10 +50,10 @@ TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
         return false
 
     velocity = @GetVelocity!
-    count = 1
+    @[ AddonName ] = origin
 
-    for entity in *FindInSphere( origin, radius + 16 )
-        if entity == @
+    for entity in *FindInSphere( origin, radius + 32 )
+        if Protection\GetBool! and entity == @
             continue
 
         className = entity\GetClass!
@@ -65,15 +67,14 @@ TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
         if health > 100
             continue
 
-        position = entity\GetPos!
+        position = entity\WorldSpaceCenter!
         unless IsInWorld( position )
             continue
 
         gibVelocity = entity\GetVelocity!
-        count += 1
 
         @SetVelocity( gibVelocity )
-        @SetPos( position )
+        @[ AddonName ] = position
 
         if entity\PrecacheGibs! > 0
             gibVelocity\Add( velocity )
@@ -84,9 +85,6 @@ TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
                 entity\KillSilent!
                 return
         entity\TakeDamage( health, attacker, inflictor )
-
-    @SetVelocity( force / 2 )
-    @SetPos( origin )
 
     return true
 
@@ -113,7 +111,7 @@ hook.Add "EntityRemoved", AddonName, ( fullUpdate ) =>
         unless owner\IsValid!
             return
 
-    start = @LocalToWorld( @OBBCenter! )
+    start = @WorldSpaceCenter!
     velocity = @GetVelocity!
 
     mins, maxs = owner\GetCollisionBounds!
@@ -131,3 +129,14 @@ hook.Add "EntityRemoved", AddonName, ( fullUpdate ) =>
         TraceResult = TraceLine( Trace )
         if not TraceResult.Hit and TryTeleportPlayer( owner, TraceResult.HitPos, filter, mins, maxs, @, length, velocity )
             break
+
+ENTITY_SetPos = FindMetaTable( "Entity" ).SetPos
+
+hook.Add "FinishMove", AddonName, =>
+    origin = @[ AddonName ]
+    unless origin
+        return
+
+    ENTITY_SetPos( @, origin )
+    @[ AddonName ] = nil
+    return true
