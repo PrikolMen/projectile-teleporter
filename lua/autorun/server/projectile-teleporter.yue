@@ -88,7 +88,6 @@ TryTeleportPlayer = ( origin, filter, mins, maxs, inflictor, radius, force ) =>
 
     return true
 
-AngleMeta = FindMetaTable( "Angle" )
 Directions = {
     Vector( 0, 0, 1 )
     Vector( 0, 0, -1 )
@@ -123,20 +122,19 @@ hook.Add "EntityRemoved", AddonName, ( fullUpdate ) =>
     if not TraceResult.Hit and TryTeleportPlayer( owner, TraceResult.HitPos, filter, mins, maxs, @, length, velocity )
         return
 
-    angles = @GetAngles!
     for direction in *Directions
         Trace.endpos = start + direction * maxs
         TraceResult = TraceLine( Trace )
         if not TraceResult.Hit and TryTeleportPlayer( owner, TraceResult.HitPos, filter, mins, maxs, @, length, velocity )
             break
 
-ENTITY_SetPos = FindMetaTable( "Entity" ).SetPos
+:SetPos = FindMetaTable( "Entity" )
 
 hook.Add "FinishMove", AddonName, =>
     origin = @[ AddonName ]
     unless origin
         return
 
-    ENTITY_SetPos( @, origin )
+    SetPos( @, origin )
     @[ AddonName ] = nil
     return true
